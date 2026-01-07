@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { format, parseISO } from "date-fns";
 import { it } from "date-fns/locale";
+import axios from "axios";
 import { getUsers, updateUser, deleteUser } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
@@ -8,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogContent,
@@ -48,7 +50,10 @@ import {
   User,
   Shield,
   UserCog,
+  UserPlus,
 } from "lucide-react";
+
+const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
 const ROLE_STYLES = {
   admin: { label: "Admin", color: "bg-purple-100 text-purple-700", icon: Shield },
@@ -61,10 +66,21 @@ const Users = () => {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editDialog, setEditDialog] = useState({ open: false, user: null });
+  const [addDialog, setAddDialog] = useState(false);
   const [editRole, setEditRole] = useState("");
-  const [editManager, setEditManager] = useState("");
+  const [editManager, setEditManager] = useState("none");
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(null);
+
+  // New user form
+  const [newUser, setNewUser] = useState({
+    email: "",
+    password: "",
+    first_name: "",
+    last_name: "",
+    role: "employee",
+    manager_id: "none",
+  });
 
   useEffect(() => {
     fetchUsers();
@@ -84,7 +100,7 @@ const Users = () => {
 
   const openEditDialog = (user) => {
     setEditRole(user.role);
-    setEditManager(user.manager_id || "");
+    setEditManager(user.manager_id || "none");
     setEditDialog({ open: true, user });
   };
 
@@ -93,15 +109,53 @@ const Users = () => {
     
     setSaving(true);
     try {
-      await updateUser(editDialog.user.user_id, {
+      const updateData = {
         role: editRole,
-        manager_id: editManager || null,
-      });
+        manager_id: editManager === "none" ? null : editManager,
+      };
+      await updateUser(editDialog.user.user_id, updateData);
       toast.success("Utente aggiornato!");
       setEditDialog({ open: false, user: null });
       fetchUsers();
     } catch (error) {
+      console.error("Update error:", error);
       toast.error(error.response?.data?.detail || "Errore nell'aggiornamento");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleAddUser = async () => {
+    if (!newUser.email || !newUser.password || !newUser.first_name || !newUser.last_name) {
+      toast.error("Compila tutti i campi obbligatori");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const userData = {
+        email: newUser.email,
+        password: newUser.password,
+        first_name: newUser.first_name,
+        last_name: newUser.last_name,
+        role: newUser.role,
+        manager_id: newUser.manager_id === "none" ? null : newUser.manager_id,
+      };
+      await axios.post(`${API}/auth/register`, userData);
+      toast.success("Utente creato con successo!");
+      setAddDialog(false);
+      setNewUser({
+        email: "",
+        password: "",
+        first_name: "",
+        last_name: "",
+        role: "employee",
+        manager_id: "none",
+      });
+      fetchUsers();
+    } catch (error) {
+      console.error("Add user error:", error);
+      toast.error(error.response?.data?.detail || "Errore nella creazione dell'utente");
     } finally {
       setSaving(false);
     }
@@ -132,9 +186,19 @@ const Users = () => {
 
   return (
     <div className="space-y-8 animate-fade-in" data-testid="users-page">
-      <div>
-        <h1 className="font-heading text-3xl font-bold text-slate-900">Gestione Utenti</h1>
-        <p className="text-slate-500 mt-1">Gestisci i ruoli e i team degli utenti</p>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="font-heading text-3xl font-bold text-slate-900">Gestione Utenti</h1>
+          <p className="text-slate-500 mt-1">Gestisci i ruoli e i team degli utenti</p>
+        </div>
+        <Button
+          onClick={() => setAddDialog(true)}
+          className="bg-slate-900 hover:bg-slate-800 rounded-xl shadow-lg shadow-slate-900/20"
+          data-testid="add-user-btn"
+        >
+          <UserPlus className="mr-2 h-4 w-4" />
+          Aggiungi Utente
+        </Button>
       </div>
 
       <Card className="rounded-2xl border-slate-100 shadow-card">
@@ -270,7 +334,13 @@ const Users = () => {
       {/* Edit User Dialog */}
       <Dialog
         open={editDialog.open}
-        onOpenChange={(open) => setEditDialog({ open, user: editDialog.user })}
+        onOpenChange={(open) => {
+          if (!open) {
+            setEditDialog({ open: false, user: null });
+            setEditRole("");
+            setEditManager("none");
+          }
+        }}
       >
         <DialogContent className="rounded-2xl">
           <DialogHeader>
@@ -294,7 +364,7 @@ const Users = () => {
                 <Label>Ruolo</Label>
                 <Select value={editRole} onValueChange={setEditRole}>
                   <SelectTrigger className="rounded-xl" data-testid="role-select">
-                    <SelectValue />
+                    <SelectValue placeholder="Seleziona ruolo" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="employee">Dipendente</SelectItem>
@@ -312,7 +382,7 @@ const Users = () => {
                       <SelectValue placeholder="Seleziona manager" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">Nessuno</SelectItem>
+                      <SelectItem value="none">Nessuno</SelectItem>
                       {managers.map((m) => (
                         <SelectItem key={m.user_id} value={m.user_id}>
                           {m.first_name} {m.last_name}
@@ -327,7 +397,11 @@ const Users = () => {
           <DialogFooter className="mt-6">
             <Button
               variant="outline"
-              onClick={() => setEditDialog({ open: false, user: null })}
+              onClick={() => {
+                setEditDialog({ open: false, user: null });
+                setEditRole("");
+                setEditManager("none");
+              }}
               className="rounded-xl"
             >
               Annulla
@@ -339,6 +413,140 @@ const Users = () => {
               data-testid="save-user-btn"
             >
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Salva"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add User Dialog */}
+      <Dialog open={addDialog} onOpenChange={setAddDialog}>
+        <DialogContent className="rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="font-heading text-xl">Aggiungi Nuovo Utente</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 mt-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="new-firstname">Nome *</Label>
+                <Input
+                  id="new-firstname"
+                  value={newUser.first_name}
+                  onChange={(e) => setNewUser({ ...newUser, first_name: e.target.value })}
+                  placeholder="Mario"
+                  className="rounded-xl"
+                  data-testid="new-user-firstname"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="new-lastname">Cognome *</Label>
+                <Input
+                  id="new-lastname"
+                  value={newUser.last_name}
+                  onChange={(e) => setNewUser({ ...newUser, last_name: e.target.value })}
+                  placeholder="Rossi"
+                  className="rounded-xl"
+                  data-testid="new-user-lastname"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="new-email">Email *</Label>
+              <Input
+                id="new-email"
+                type="email"
+                value={newUser.email}
+                onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
+                placeholder="mario.rossi@azienda.it"
+                className="rounded-xl"
+                data-testid="new-user-email"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="new-password">Password *</Label>
+              <Input
+                id="new-password"
+                type="password"
+                value={newUser.password}
+                onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
+                placeholder="Minimo 6 caratteri"
+                className="rounded-xl"
+                data-testid="new-user-password"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Ruolo</Label>
+              <Select
+                value={newUser.role}
+                onValueChange={(value) => setNewUser({ ...newUser, role: value })}
+              >
+                <SelectTrigger className="rounded-xl" data-testid="new-user-role">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="employee">Dipendente</SelectItem>
+                  <SelectItem value="manager">Manager</SelectItem>
+                  <SelectItem value="admin">Admin</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {newUser.role === "employee" && (
+              <div className="space-y-2">
+                <Label>Manager di riferimento</Label>
+                <Select
+                  value={newUser.manager_id}
+                  onValueChange={(value) => setNewUser({ ...newUser, manager_id: value })}
+                >
+                  <SelectTrigger className="rounded-xl" data-testid="new-user-manager">
+                    <SelectValue placeholder="Seleziona manager" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Nessuno</SelectItem>
+                    {managers.map((m) => (
+                      <SelectItem key={m.user_id} value={m.user_id}>
+                        {m.first_name} {m.last_name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+          </div>
+          <DialogFooter className="mt-6">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setAddDialog(false);
+                setNewUser({
+                  email: "",
+                  password: "",
+                  first_name: "",
+                  last_name: "",
+                  role: "employee",
+                  manager_id: "none",
+                });
+              }}
+              className="rounded-xl"
+            >
+              Annulla
+            </Button>
+            <Button
+              onClick={handleAddUser}
+              disabled={saving}
+              className="bg-slate-900 hover:bg-slate-800 rounded-xl"
+              data-testid="create-user-btn"
+            >
+              {saving ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Creazione...
+                </>
+              ) : (
+                "Crea Utente"
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>
