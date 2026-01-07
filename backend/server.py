@@ -256,7 +256,8 @@ async def get_me(current_user: dict = Depends(get_current_user)):
 # ==================== USER ROUTES ====================
 
 @api_router.get("/users", response_model=List[UserResponse])
-async def get_users(current_user: dict = Depends(get_current_user)):
+async def get_users(current_user: dict = Depends(require_manager_or_admin)):
+    """Get all users - managers and admins only"""
     users = await db.users.find({}, {"_id": 0, "password_hash": 0}).to_list(1000)
     return [UserResponse(
         user_id=u["user_id"],
@@ -269,7 +270,7 @@ async def get_users(current_user: dict = Depends(get_current_user)):
     ) for u in users]
 
 @api_router.get("/users/{user_id}", response_model=UserResponse)
-async def get_user(user_id: str, current_user: dict = Depends(get_current_user)):
+async def get_user(user_id: str, current_user: dict = Depends(require_manager_or_admin)):
     user = await db.users.find_one({"user_id": user_id}, {"_id": 0, "password_hash": 0})
     if not user:
         raise HTTPException(status_code=404, detail="Utente non trovato")
