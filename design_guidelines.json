@@ -1,0 +1,171 @@
+{
+  "typography": {
+    "font_family": {
+      "headings": "Manrope, sans-serif",
+      "body": "Inter, sans-serif",
+      "mono": "JetBrains Mono, monospace"
+    },
+    "installation": "import '@fontsource/manrope'; import '@fontsource/inter';",
+    "usage": {
+      "h1": "font-heading text-4xl font-bold tracking-tight text-slate-900 dark:text-slate-50",
+      "h2": "font-heading text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-50",
+      "h3": "font-heading text-xl font-medium text-slate-900 dark:text-slate-50",
+      "body": "font-sans text-base text-slate-600 dark:text-slate-400 leading-relaxed",
+      "caption": "font-sans text-xs font-medium text-slate-500 uppercase tracking-wider"
+    }
+  },
+  "colors": {
+    "palette": {
+      "primary": {
+        "DEFAULT": "#0f172a",
+        "foreground": "#f8fafc"
+      },
+      "secondary": {
+        "DEFAULT": "#f1f5f9",
+        "foreground": "#0f172a"
+      },
+      "accent": {
+        "DEFAULT": "#6366f1",
+        "foreground": "#ffffff"
+      },
+      "status": {
+        "approved": {
+          "bg": "#ecfdf5",
+          "text": "#059669",
+          "border": "#a7f3d0"
+        },
+        "pending": {
+          "bg": "#fffbeb",
+          "text": "#d97706",
+          "border": "#fde68a"
+        },
+        "rejected": {
+          "bg": "#fff1f2",
+          "text": "#e11d48",
+          "border": "#fecdd3"
+        },
+        "permit": {
+          "bg": "#f0f9ff",
+          "text": "#0284c7",
+          "border": "#bae6fd"
+        }
+      }
+    },
+    "backgrounds": {
+      "page": "bg-slate-50 dark:bg-slate-950",
+      "card": "bg-white dark:bg-slate-900",
+      "sidebar": "bg-white/80 backdrop-blur-xl border-r border-slate-200 dark:border-slate-800"
+    }
+  },
+  "visual_enhancers": {
+    "radius": {
+      "default": "rounded-xl",
+      "button": "rounded-lg",
+      "card": "rounded-2xl"
+    },
+    "shadows": {
+      "card": "shadow-[0_2px_8px_rgba(0,0,0,0.04)] hover:shadow-[0_8px_24px_rgba(0,0,0,0.08)] transition-shadow duration-300",
+      "dropdown": "shadow-xl border border-slate-100 dark:border-slate-800",
+      "button": "shadow-sm hover:shadow-md transition-all"
+    },
+    "glassmorphism": {
+      "sidebar": "bg-white/70 backdrop-blur-lg border-r border-white/20",
+      "modal": "bg-white/90 backdrop-blur-xl shadow-2xl"
+    },
+    "borders": {
+      "subtle": "border border-slate-200 dark:border-slate-800",
+      "active": "border-indigo-500 ring-2 ring-indigo-500/20"
+    }
+  },
+  "layout_strategies": {
+    "dashboard_grid": {
+      "type": "Control Room Grid",
+      "classes": "grid grid-cols-1 md:grid-cols-12 gap-6 p-6 md:p-8",
+      "areas": {
+        "sidebar": "hidden md:block md:col-span-2 lg:col-span-2 h-screen sticky top-0",
+        "main_content": "col-span-1 md:col-span-10 lg:col-span-10 space-y-8",
+        "stats_row": "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4",
+        "calendar_widget": "col-span-full lg:col-span-8 bg-white rounded-2xl p-6 border border-slate-100 shadow-sm",
+        "activity_feed": "col-span-full lg:col-span-4 bg-white rounded-2xl p-6 border border-slate-100 shadow-sm h-full"
+      }
+    },
+    "spacing": {
+      "section_gap": "space-y-12",
+      "card_padding": "p-6 md:p-8",
+      "container_padding": "px-4 md:px-8 lg:px-12"
+    }
+  },
+  "components": {
+    "calendar": {
+      "path": "/app/frontend/src/components/ui/calendar.jsx",
+      "style": "Customized Shadcn Calendar. Remove default rounded-md. Use rounded-xl. Add custom day renderers to show colored dots for absence types.",
+      "instructions": "Do not use default styles. Wrap in a card. Header should be bold Manrope."
+    },
+    "buttons": {
+      "primary": "bg-slate-900 text-white hover:bg-slate-800 shadow-lg shadow-slate-900/20 px-6 py-2.5 font-medium rounded-lg transition-all active:scale-95",
+      "secondary": "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 hover:border-slate-300 px-6 py-2.5 font-medium rounded-lg transition-all",
+      "ghost": "text-slate-500 hover:text-slate-900 hover:bg-slate-100 px-4 py-2 rounded-lg"
+    },
+    "cards": {
+      "stat_card": "bg-white p-6 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-all group relative overflow-hidden",
+      "action_card": "bg-gradient-to-br from-indigo-500 to-violet-600 text-white p-8 rounded-2xl shadow-xl shadow-indigo-500/20"
+    },
+    "tables": {
+      "style": "w-full text-sm text-left",
+      "header": "text-xs text-slate-500 uppercase bg-slate-50/50 font-semibold tracking-wider py-3 px-4",
+      "row": "border-b border-slate-100 hover:bg-slate-50/50 transition-colors",
+      "cell": "py-4 px-4 text-slate-700 font-medium"
+    }
+  },
+  "images": {
+    "login_background": {
+      "url": "https://images.pexels.com/photos/380768/pexels-photo-380768.jpeg",
+      "alt": "Modern minimalist office space",
+      "usage": "Full screen background with overlay-black/40 for login page"
+    },
+    "avatars": [
+      "https://images.pexels.com/photos/7491162/pexels-photo-7491162.jpeg",
+      "https://images.pexels.com/photos/7581126/pexels-photo-7581126.jpeg"
+    ],
+    "placeholders": {
+      "logo": "https://via.placeholder.com/150x50?text=COMPANY+LOGO"
+    }
+  },
+  "universal_guidelines": {
+    "principles": [
+      "Fusion over Imitation: Mix Swiss typography with soft, organic colors.",
+      "Emotion First: The app should feel 'Calm' and 'Organized'. Avoid aggressive alerts.",
+      "Negative Space: Use p-8 where others use p-4. Let the data breathe.",
+      "Contrast: High contrast text for readability (Slate-900 on White)."
+    ],
+    "anti_patterns": [
+      "Do not use default Shadcn radius (0.5rem) everywhere. Mix it up.",
+      "Do not use 'Inter' for headings. Use 'Manrope'.",
+      "Avoid full-screen gradients. Use subtle mesh gradients or solid colors."
+    ],
+    "accessibility": {
+      "contrast": "Ensure text is Slate-600 or darker on white backgrounds.",
+      "focus": "All interactive elements must have visible focus rings (ring-2 ring-indigo-500/20).",
+      "motion": "Respect prefers-reduced-motion."
+    },
+    "testing": {
+      "attribute": "data-testid",
+      "format": "kebab-case (e.g., 'submit-request-btn', 'calendar-view')"
+    }
+  },
+  "tech_stack": {
+    "framework": "React JS (Create React App structure)",
+    "styling": "Tailwind CSS",
+    "ui_library": "Shadcn/UI (Radix Primitives)",
+    "icons": "Lucide React"
+  },
+  "instructions_to_main_agent": [
+    "1. Install fonts: `npm install @fontsource/manrope @fontsource/inter`",
+    "2. Update `tailwind.config.js` to include the new colors and font families.",
+    "3. Create a `Layout` component that implements the Sidebar + Main Content grid.",
+    "4. Build the `Calendar` component using the custom styles defined above.",
+    "5. Ensure all forms (Login, Request Absence) use Shadcn Form components but styled with the 'Visual Enhancers' rules.",
+    "6. Use the provided image URLs for the login page and avatars.",
+    "7. DO NOT ask for clarification. Make executive design decisions based on this guide."
+  ]
+}
