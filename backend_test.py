@@ -8,6 +8,9 @@ class AbsenceManagementTester:
         self.base_url = base_url
         self.admin_token = None
         self.employee_token = None
+        self.hr_token = None
+        self.manager_token = None
+        self.test_user_id = None
         self.tests_run = 0
         self.tests_passed = 0
         self.failed_tests = []
