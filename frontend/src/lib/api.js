@@ -31,6 +31,19 @@ export const getAllBalances = () => axios.get(`${API}/balance/all`);
 export const addHoursToUser = (userId, data) => axios.post(`${API}/users/${userId}/add-hours`, data);
 export const runMonthlyAccrual = () => axios.post(`${API}/hours/monthly-accrual`);
 
+// Change absence status
+export const changeAbsenceStatus = (absenceId, newStatus, reason) =>
+  axios.put(`${API}/absences/${absenceId}/status`, { new_status: newStatus, reason });
+
+// Export
+export const exportAbsences = (year, month, userId) => {
+  const params = new URLSearchParams();
+  if (year) params.append('year', year);
+  if (month) params.append('month', month);
+  if (userId) params.append('user_id', userId);
+  return axios.get(`${API}/export/absences?${params.toString()}`, { responseType: 'blob' });
+};
+
 // Settings
 export const getSettings = () => axios.get(`${API}/settings`);
 export const updateSettings = (data) => axios.put(`${API}/settings`, data);
