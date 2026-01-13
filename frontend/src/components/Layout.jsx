@@ -24,10 +24,14 @@ import {
 } from "lucide-react";
 
 const Layout = () => {
-  const { user, logout, isAdmin, isManagerOrAdmin } = useAuth();
+  const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [settings, setSettings] = useState({ company_name: "Gestione Assenze", logo_base64: null });
+
+  const isAdmin = () => user?.role === "admin";
+  const canManageUsers = () => ["admin", "ufficio_personale"].includes(user?.role);
+  const canApprove = () => ["admin", "manager", "ufficio_personale"].includes(user?.role);
 
   useEffect(() => {
     fetchSettings();
