@@ -1,11 +1,13 @@
 import { useState, useEffect } from "react";
 import { format, parseISO } from "date-fns";
 import { it } from "date-fns/locale";
-import { getMyAbsences, deleteAbsence } from "@/lib/api";
+import { getMyAbsences, deleteAbsence, exportAbsences } from "@/lib/api";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Table,
   TableBody,
@@ -26,12 +28,20 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import {
   Loader2,
   Trash2,
   Palmtree,
   Timer,
   Thermometer,
   FileX,
+  Download,
 } from "lucide-react";
 
 const ABSENCE_TYPES = {
