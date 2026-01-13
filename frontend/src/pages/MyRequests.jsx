@@ -66,6 +66,10 @@ const MyRequests = () => {
   const [absences, setAbsences] = useState([]);
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState(null);
+  const [exportDialog, setExportDialog] = useState(false);
+  const [exportYear, setExportYear] = useState(new Date().getFullYear());
+  const [exportMonth, setExportMonth] = useState(new Date().getMonth() + 1);
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
     fetchAbsences();
@@ -80,6 +84,26 @@ const MyRequests = () => {
       toast.error("Errore nel caricamento delle richieste");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      const response = await exportAbsences(exportYear, exportMonth);
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `le_mie_assenze_${exportMonth}_${exportYear}.xlsx`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      toast.success("Esportazione completata!");
+      setExportDialog(false);
+    } catch (error) {
+      toast.error("Errore nell'esportazione");
+    } finally {
+      setExporting(false);
     }
   };
 
