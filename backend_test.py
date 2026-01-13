@@ -508,26 +508,51 @@ class AbsenceManagementTester:
         return success1 and success2 and success3
 
 def main():
-    print("🚀 Starting Absence Management API Tests")
-    print("=" * 50)
+    print("🚀 Starting Absence Management API Tests - New Features")
+    print("=" * 60)
     
     tester = AbsenceManagementTester()
     
-    # Test sequence
+    # Test sequence - including new features
     tests = [
         ("Health Check", tester.test_health_check),
         ("Admin Login", tester.test_admin_login),
         ("Employee Registration", tester.test_employee_registration),
+        ("HR Registration", tester.test_hr_registration),
+        ("Manager Registration", tester.test_manager_registration),
         ("Get Current User", tester.test_get_current_user),
         ("Get Users", tester.test_get_users),
+        ("HR Access to Users", tester.test_hr_access_to_users),
         ("Get Stats", tester.test_get_stats),
+        
+        # Hours Balance Tests (NEW)
+        ("Get My Balance", tester.test_get_my_balance),
+        ("Get All Balances", tester.test_get_all_balances),
+        ("HR Access to All Balances", tester.test_hr_access_to_balances),
+        
+        # Absence Tests with Hours (NEW)
         ("Create Absence Request", tester.test_create_absence_request),
+        ("Create Permesso with Hours", tester.test_create_permesso_with_hours),
+        ("Create Permesso without Hours (should fail)", tester.test_create_permesso_without_hours),
+        ("Get Absences with Filters", tester.test_get_absences_with_filters),
         ("Get All Absences", tester.test_get_all_absences),
         ("Get My Absences", tester.test_get_my_absences),
         ("Get Pending Absences", tester.test_get_pending_absences),
+        ("HR Access to Pending Absences", tester.test_hr_access_to_pending_absences),
         ("Approve Absence", tester.test_approve_absence),
+        
+        # Hours Management Tests (NEW)
+        ("Add Hours to User", tester.test_add_hours_to_user),
+        ("HR Add Hours to User", tester.test_hr_add_hours_to_user),
+        ("Update User Hours", tester.test_update_user_hours),
+        ("Monthly Accrual", tester.test_monthly_accrual),
+        ("HR Monthly Accrual", tester.test_hr_monthly_accrual),
+        
+        # Settings Tests
         ("Get Settings", tester.test_get_settings),
         ("Update Settings", tester.test_update_settings),
+        
+        # Security Tests
         ("Unauthorized Access", tester.test_unauthorized_access),
         ("Employee Access to Admin", tester.test_employee_access_to_admin_endpoint),
     ]
@@ -544,7 +569,7 @@ def main():
             })
     
     # Print results
-    print("\n" + "=" * 50)
+    print("\n" + "=" * 60)
     print(f"📊 Test Results: {tester.tests_passed}/{tester.tests_run} passed")
     
     if tester.failed_tests:
