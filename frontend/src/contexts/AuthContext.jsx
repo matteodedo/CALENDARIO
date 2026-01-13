@@ -60,7 +60,10 @@ export const AuthProvider = ({ children }) => {
 
   const isAdmin = () => user?.role === "admin";
   const isManager = () => user?.role === "manager";
+  const isHR = () => user?.role === "ufficio_personale";
   const isManagerOrAdmin = () => user?.role === "admin" || user?.role === "manager";
+  const canManageUsers = () => ["admin", "ufficio_personale"].includes(user?.role);
+  const canApprove = () => ["admin", "manager", "ufficio_personale"].includes(user?.role);
 
   return (
     <AuthContext.Provider
@@ -73,7 +76,10 @@ export const AuthProvider = ({ children }) => {
         logout,
         isAdmin,
         isManager,
+        isHR,
         isManagerOrAdmin,
+        canManageUsers,
+        canApprove,
       }}
     >
       {children}
