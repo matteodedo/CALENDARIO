@@ -302,6 +302,211 @@ class AbsenceManagementTester:
         )
         return success
 
+    # NEW FEATURES TESTS
+    
+    def test_get_my_balance(self):
+        """Test get current user's hours balance"""
+        return self.run_test(
+            "Get My Balance",
+            "GET",
+            "balance/my",
+            200,
+            token=self.employee_token
+        )
+
+    def test_get_all_balances(self):
+        """Test get all users' hours balance (admin/manager/hr only)"""
+        return self.run_test(
+            "Get All Balances",
+            "GET",
+            "balance/all",
+            200,
+            token=self.admin_token
+        )
+
+    def test_hr_access_to_balances(self):
+        """Test HR can access all balances"""
+        return self.run_test(
+            "HR Access to All Balances",
+            "GET",
+            "balance/all",
+            200,
+            token=self.hr_token
+        )
+
+    def test_create_permesso_with_hours(self):
+        """Test creating permesso request with mandatory hours"""
+        tomorrow = (datetime.now() + timedelta(days=3)).strftime("%Y-%m-%d")
+        
+        success, response = self.run_test(
+            "Create Permesso with Hours",
+            "POST",
+            "absences",
+            200,
+            data={
+                "absence_type": "permesso",
+                "start_date": tomorrow,
+                "end_date": tomorrow,
+                "hours": 4.0,
+                "notes": "Test permesso with hours"
+            },
+            token=self.employee_token
+        )
+        if success and 'absence_id' in response:
+            self.test_permesso_id = response['absence_id']
+            return True
+        return False
+
+    def test_create_permesso_without_hours(self):
+        """Test creating permesso request without hours (should fail)"""
+        tomorrow = (datetime.now() + timedelta(days=4)).strftime("%Y-%m-%d")
+        
+        success, _ = self.run_test(
+            "Create Permesso without Hours (should fail)",
+            "POST",
+            "absences",
+            400,  # Should fail with 400
+            data={
+                "absence_type": "permesso",
+                "start_date": tomorrow,
+                "end_date": tomorrow,
+                "notes": "Test permesso without hours"
+            },
+            token=self.employee_token
+        )
+        return success
+
+    def test_add_hours_to_user(self):
+        """Test adding hours to a user (admin/manager/hr can do this)"""
+        if not self.test_user_id:
+            print("❌ No test user ID available")
+            return False
+            
+        return self.run_test(
+            "Add Hours to User",
+            "POST",
+            f"users/{self.test_user_id}/add-hours",
+            200,
+            data={
+                "user_id": self.test_user_id,
+                "hours_type": "ferie",
+                "hours": 8.0,
+                "notes": "Test bonus hours"
+            },
+            token=self.admin_token
+        )
+
+    def test_hr_add_hours_to_user(self):
+        """Test HR can add hours to users"""
+        if not self.test_user_id:
+            print("❌ No test user ID available")
+            return False
+            
+        return self.run_test(
+            "HR Add Hours to User",
+            "POST",
+            f"users/{self.test_user_id}/add-hours",
+            200,
+            data={
+                "user_id": self.test_user_id,
+                "hours_type": "permessi",
+                "hours": 4.0,
+                "notes": "HR adjustment"
+            },
+            token=self.hr_token
+        )
+
+    def test_monthly_accrual(self):
+        """Test monthly accrual functionality"""
+        return self.run_test(
+            "Monthly Accrual",
+            "POST",
+            "hours/monthly-accrual",
+            200,
+            token=self.admin_token
+        )
+
+    def test_hr_monthly_accrual(self):
+        """Test HR can run monthly accrual"""
+        return self.run_test(
+            "HR Monthly Accrual",
+            "POST",
+            "hours/monthly-accrual",
+            200,
+            token=self.hr_token
+        )
+
+    def test_update_user_hours(self):
+        """Test updating user with hours management"""
+        if not self.test_user_id:
+            print("❌ No test user ID available")
+            return False
+            
+        return self.run_test(
+            "Update User Hours",
+            "PUT",
+            f"users/{self.test_user_id}",
+            200,
+            data={
+                "total_ferie_hours": 200.0,
+                "total_permessi_hours": 100.0,
+                "monthly_ferie_hours": 16.0,
+                "monthly_permessi_hours": 10.0
+            },
+            token=self.admin_token
+        )
+
+    def test_hr_access_to_users(self):
+        """Test HR can access users endpoint"""
+        return self.run_test(
+            "HR Access to Users",
+            "GET",
+            "users",
+            200,
+            token=self.hr_token
+        )
+
+    def test_hr_access_to_pending_absences(self):
+        """Test HR can access pending absences for approval"""
+        return self.run_test(
+            "HR Access to Pending Absences",
+            "GET",
+            "absences/pending",
+            200,
+            token=self.hr_token
+        )
+
+    def test_get_absences_with_filters(self):
+        """Test get absences with type filters"""
+        # Test filter by ferie
+        success1, _ = self.run_test(
+            "Get Absences - Filter by Ferie",
+            "GET",
+            "absences?absence_type=ferie",
+            200,
+            token=self.admin_token
+        )
+        
+        # Test filter by permesso
+        success2, _ = self.run_test(
+            "Get Absences - Filter by Permesso",
+            "GET",
+            "absences?absence_type=permesso",
+            200,
+            token=self.admin_token
+        )
+        
+        # Test filter by status
+        success3, _ = self.run_test(
+            "Get Absences - Filter by Status",
+            "GET",
+            "absences?status=approved",
+            200,
+            token=self.admin_token
+        )
+        
+        return success1 and success2 and success3
+
 def main():
     print("🚀 Starting Absence Management API Tests")
     print("=" * 50)
