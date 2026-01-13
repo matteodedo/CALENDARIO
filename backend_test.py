@@ -88,13 +88,14 @@ class AbsenceManagementTester:
 
     def test_employee_registration(self):
         """Test employee registration"""
+        timestamp = datetime.now().strftime("%H%M%S")
         success, response = self.run_test(
             "Employee Registration",
             "POST",
             "auth/register",
             200,
             data={
-                "email": "test.employee@test.it",
+                "email": f"test.employee.{timestamp}@test.it",
                 "password": "employee123",
                 "first_name": "Mario",
                 "last_name": "Rossi",
@@ -115,13 +116,14 @@ class AbsenceManagementTester:
 
     def test_hr_registration(self):
         """Test HR (ufficio_personale) registration"""
+        timestamp = datetime.now().strftime("%H%M%S")
         success, response = self.run_test(
             "HR Registration",
             "POST",
             "auth/register",
             200,
             data={
-                "email": "hr@test.it",
+                "email": f"hr.{timestamp}@test.it",
                 "password": "hr123",
                 "first_name": "Anna",
                 "last_name": "Bianchi",
@@ -138,13 +140,14 @@ class AbsenceManagementTester:
 
     def test_manager_registration(self):
         """Test Manager registration"""
+        timestamp = datetime.now().strftime("%H%M%S")
         success, response = self.run_test(
             "Manager Registration",
             "POST",
             "auth/register",
             200,
             data={
-                "email": "manager@test.it",
+                "email": f"manager.{timestamp}@test.it",
                 "password": "manager123",
                 "first_name": "Luca",
                 "last_name": "Verdi",
