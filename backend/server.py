@@ -206,8 +206,8 @@ async def require_admin(current_user: dict = Depends(get_current_user)):
     return current_user
 
 async def require_manager_or_admin(current_user: dict = Depends(get_current_user)):
-    if current_user["role"] not in [UserRole.ADMIN, UserRole.MANAGER]:
-        raise HTTPException(status_code=403, detail="Accesso riservato a manager e amministratori")
+    if current_user["role"] not in [UserRole.ADMIN, UserRole.MANAGER, UserRole.HR]:
+        raise HTTPException(status_code=403, detail="Accesso riservato a manager, ufficio personale e amministratori")
     return current_user
 
 async def require_hr_or_admin(current_user: dict = Depends(get_current_user)):
