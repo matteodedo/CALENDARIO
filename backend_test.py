@@ -98,12 +98,64 @@ class AbsenceManagementTester:
                 "password": "employee123",
                 "first_name": "Mario",
                 "last_name": "Rossi",
-                "role": "employee"
+                "role": "employee",
+                "total_ferie_hours": 160,
+                "total_permessi_hours": 80,
+                "monthly_ferie_hours": 14,
+                "monthly_permessi_hours": 8
             }
         )
         if success and 'token' in response:
             self.employee_token = response['token']
+            self.test_user_id = response['user']['user_id']
             print(f"   Employee token obtained: {self.employee_token[:20]}...")
+            print(f"   Employee user_id: {self.test_user_id}")
+            return True
+        return False
+
+    def test_hr_registration(self):
+        """Test HR (ufficio_personale) registration"""
+        success, response = self.run_test(
+            "HR Registration",
+            "POST",
+            "auth/register",
+            200,
+            data={
+                "email": "hr@test.it",
+                "password": "hr123",
+                "first_name": "Anna",
+                "last_name": "Bianchi",
+                "role": "ufficio_personale",
+                "total_ferie_hours": 160,
+                "total_permessi_hours": 80
+            }
+        )
+        if success and 'token' in response:
+            self.hr_token = response['token']
+            print(f"   HR token obtained: {self.hr_token[:20]}...")
+            return True
+        return False
+
+    def test_manager_registration(self):
+        """Test Manager registration"""
+        success, response = self.run_test(
+            "Manager Registration",
+            "POST",
+            "auth/register",
+            200,
+            data={
+                "email": "manager@test.it",
+                "password": "manager123",
+                "first_name": "Luca",
+                "last_name": "Verdi",
+                "role": "manager",
+                "total_ferie_hours": 160,
+                "total_permessi_hours": 80
+            }
+        )
+        if success and 'token' in response:
+            self.manager_token = response['token']
+            print(f"   Manager token obtained: {self.manager_token[:20]}...")
             return True
         return False
 
