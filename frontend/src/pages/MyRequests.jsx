@@ -130,10 +130,66 @@ const MyRequests = () => {
 
   return (
     <div className="space-y-8 animate-fade-in" data-testid="my-requests-page">
-      <div>
-        <h1 className="font-heading text-3xl font-bold text-slate-900">Le Mie Richieste</h1>
-        <p className="text-slate-500 mt-1">Visualizza e gestisci le tue richieste di assenza</p>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="font-heading text-3xl font-bold text-slate-900">Le Mie Richieste</h1>
+          <p className="text-slate-500 mt-1">Visualizza e gestisci le tue richieste di assenza</p>
+        </div>
+        <Button
+          variant="outline"
+          onClick={() => setExportDialog(true)}
+          className="rounded-xl"
+          data-testid="export-my-absences-btn"
+        >
+          <Download className="mr-2 h-4 w-4" />
+          Esporta Excel
+        </Button>
       </div>
+
+      {/* Export Dialog */}
+      <Dialog open={exportDialog} onOpenChange={setExportDialog}>
+        <DialogContent className="rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="font-heading text-xl">Esporta le mie assenze</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 mt-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Anno</Label>
+                <Input
+                  type="number"
+                  value={exportYear}
+                  onChange={(e) => setExportYear(parseInt(e.target.value))}
+                  className="rounded-xl"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Mese</Label>
+                <Input
+                  type="number"
+                  min="1"
+                  max="12"
+                  value={exportMonth}
+                  onChange={(e) => setExportMonth(parseInt(e.target.value))}
+                  className="rounded-xl"
+                />
+              </div>
+            </div>
+          </div>
+          <DialogFooter className="mt-6">
+            <Button variant="outline" onClick={() => setExportDialog(false)} className="rounded-xl">
+              Annulla
+            </Button>
+            <Button
+              onClick={handleExport}
+              disabled={exporting}
+              className="bg-emerald-600 hover:bg-emerald-700 rounded-xl"
+            >
+              {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Esporta"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Card className="rounded-2xl border-slate-100 shadow-card">
         <CardHeader>
