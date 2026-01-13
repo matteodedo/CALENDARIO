@@ -1,8 +1,11 @@
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, UploadFile, File
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.responses import StreamingResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
 import os
 import logging
 import asyncio
@@ -15,6 +18,11 @@ import jwt
 import bcrypt
 import resend
 import base64
+import io
+from openpyxl import Workbook
+from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+from openpyxl.utils import get_column_letter
+import calendar
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -46,13 +54,16 @@ api_router = APIRouter(prefix="/api")
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+# Scheduler for monthly accrual
+scheduler = AsyncIOScheduler()
+
 # ==================== MODELS ====================
 
 class UserRole:
     ADMIN = "admin"
     MANAGER = "manager"
     EMPLOYEE = "employee"
-    HR = "ufficio_personale"  # New role
+    HR = "ufficio_personale"
 
 class AbsenceType:
     FERIE = "ferie"
@@ -104,15 +115,9 @@ class UserUpdate(BaseModel):
     monthly_ferie_hours: Optional[float] = None
     monthly_permessi_hours: Optional[float] = None
 
-class UserHoursUpdate(BaseModel):
-    total_ferie_hours: Optional[float] = None
-    total_permessi_hours: Optional[float] = None
-    monthly_ferie_hours: Optional[float] = None
-    monthly_permessi_hours: Optional[float] = None
-
 class AddHoursRequest(BaseModel):
     user_id: str
-    hours_type: str  # "ferie" or "permessi"
+    hours_type: str
     hours: float
     notes: Optional[str] = None
 
@@ -121,7 +126,7 @@ class AbsenceCreate(BaseModel):
     absence_type: str
     start_date: str
     end_date: str
-    hours: Optional[float] = None  # For permessi
+    hours: Optional[float] = None
     notes: Optional[str] = None
 
 class AbsenceResponse(BaseModel):
@@ -141,7 +146,11 @@ class AbsenceResponse(BaseModel):
     created_at: str
 
 class AbsenceAction(BaseModel):
-    action: str  # approve or reject
+    action: str  # approve, reject, pending
+    reason: Optional[str] = None
+
+class AbsenceStatusChange(BaseModel):
+    new_status: str  # pending, approved, rejected
     reason: Optional[str] = None
 
 # Hours Balance Response
@@ -163,10 +172,6 @@ class HoursBalance(BaseModel):
 class CompanySettings(BaseModel):
     company_name: str = "My Company"
     logo_base64: Optional[str] = None
-
-class MonthlyAccrualSettings(BaseModel):
-    last_accrual_date: Optional[str] = None
-    auto_accrual_enabled: bool = True
 
 # ==================== HELPERS ====================
 
@@ -216,36 +221,31 @@ async def require_hr_or_admin(current_user: dict = Depends(get_current_user)):
     return current_user
 
 async def require_hours_manager(current_user: dict = Depends(get_current_user)):
-    """Admin, Manager, or HR can manage hours"""
     if current_user["role"] not in [UserRole.ADMIN, UserRole.MANAGER, UserRole.HR]:
         raise HTTPException(status_code=403, detail="Non hai i permessi per gestire le ore")
     return current_user
 
 def calculate_working_days(start_date: str, end_date: str) -> int:
-    """Calculate working days between two dates (excluding weekends)"""
     start = datetime.strptime(start_date, "%Y-%m-%d").date()
     end = datetime.strptime(end_date, "%Y-%m-%d").date()
     days = 0
     current = start
     while current <= end:
-        if current.weekday() < 5:  # Monday to Friday
+        if current.weekday() < 5:
             days += 1
         current += timedelta(days=1)
     return days
 
 async def calculate_user_hours_balance(user_id: str) -> dict:
-    """Calculate hours balance for a user"""
     user = await db.users.find_one({"user_id": user_id}, {"_id": 0})
     if not user:
         return None
     
-    # Get approved absences
     approved_absences = await db.absences.find({
         "user_id": user_id,
         "status": AbsenceStatus.APPROVED
     }, {"_id": 0}).to_list(1000)
     
-    # Get pending absences
     pending_absences = await db.absences.find({
         "user_id": user_id,
         "status": AbsenceStatus.PENDING
@@ -259,7 +259,7 @@ async def calculate_user_hours_balance(user_id: str) -> dict:
     for absence in approved_absences:
         if absence["absence_type"] == AbsenceType.FERIE:
             days = calculate_working_days(absence["start_date"], absence["end_date"])
-            ferie_used += days * 8  # 8 hours per day
+            ferie_used += days * 8
         elif absence["absence_type"] == AbsenceType.PERMESSO:
             permessi_used += absence.get("hours", 0)
     
@@ -289,7 +289,6 @@ async def calculate_user_hours_balance(user_id: str) -> dict:
     }
 
 async def send_notification_email(to_email: str, subject: str, html_content: str):
-    """Send email notification using Resend"""
     if not resend.api_key:
         logger.warning("RESEND_API_KEY not configured, skipping email")
         return None
@@ -307,6 +306,39 @@ async def send_notification_email(to_email: str, subject: str, html_content: str
     except Exception as e:
         logger.error(f"Failed to send email: {str(e)}")
         return None
+
+# ==================== SCHEDULED JOBS ====================
+
+async def monthly_accrual_job():
+    """Scheduled job to run monthly accrual on the 1st of each month"""
+    logger.info("Running scheduled monthly accrual job...")
+    users = await db.users.find({}, {"_id": 0}).to_list(1000)
+    updated_count = 0
+    
+    for user in users:
+        monthly_ferie = user.get("monthly_ferie_hours", 0)
+        monthly_permessi = user.get("monthly_permessi_hours", 0)
+        
+        if monthly_ferie > 0 or monthly_permessi > 0:
+            update_data = {}
+            if monthly_ferie > 0:
+                update_data["total_ferie_hours"] = user.get("total_ferie_hours", 0) + monthly_ferie
+            if monthly_permessi > 0:
+                update_data["total_permessi_hours"] = user.get("total_permessi_hours", 0) + monthly_permessi
+            
+            if update_data:
+                await db.users.update_one({"user_id": user["user_id"]}, {"$set": update_data})
+                updated_count += 1
+    
+    await db.accrual_logs.insert_one({
+        "log_id": str(uuid.uuid4()),
+        "run_by": "SYSTEM",
+        "run_by_name": "Maturazione Automatica",
+        "users_updated": updated_count,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    })
+    
+    logger.info(f"Monthly accrual completed for {updated_count} users")
 
 # ==================== AUTH ROUTES ====================
 
@@ -395,9 +427,6 @@ async def get_me(current_user: dict = Depends(get_current_user)):
 
 @api_router.get("/users", response_model=List[UserResponse])
 async def get_users(current_user: dict = Depends(require_manager_or_admin)):
-    # HR can also access
-    if current_user["role"] == UserRole.HR:
-        pass  # Allow access
     users = await db.users.find({}, {"_id": 0, "password_hash": 0}).to_list(1000)
     return [UserResponse(
         user_id=u["user_id"],
@@ -415,7 +444,6 @@ async def get_users(current_user: dict = Depends(require_manager_or_admin)):
 
 @api_router.get("/users/{user_id}", response_model=UserResponse)
 async def get_user(user_id: str, current_user: dict = Depends(get_current_user)):
-    # Users can see themselves, managers/admin/hr can see all
     if current_user["user_id"] != user_id and current_user["role"] not in [UserRole.ADMIN, UserRole.MANAGER, UserRole.HR]:
         raise HTTPException(status_code=403, detail="Non autorizzato")
     
@@ -438,7 +466,6 @@ async def get_user(user_id: str, current_user: dict = Depends(get_current_user))
 
 @api_router.put("/users/{user_id}", response_model=UserResponse)
 async def update_user(user_id: str, update: UserUpdate, current_user: dict = Depends(get_current_user)):
-    # Admin can update everything, HR can update hours only
     if current_user["role"] not in [UserRole.ADMIN, UserRole.HR]:
         raise HTTPException(status_code=403, detail="Non autorizzato")
     
@@ -448,7 +475,6 @@ async def update_user(user_id: str, update: UserUpdate, current_user: dict = Dep
     
     update_data = {k: v for k, v in update.model_dump().items() if v is not None}
     
-    # HR can only update hours
     if current_user["role"] == UserRole.HR:
         allowed_fields = ["total_ferie_hours", "total_permessi_hours", "monthly_ferie_hours", "monthly_permessi_hours"]
         update_data = {k: v for k, v in update_data.items() if k in allowed_fields}
@@ -487,7 +513,6 @@ async def delete_user(user_id: str, current_user: dict = Depends(require_admin))
 
 @api_router.get("/users/{user_id}/balance", response_model=HoursBalance)
 async def get_user_balance(user_id: str, current_user: dict = Depends(get_current_user)):
-    """Get hours balance for a user - users can see their own, managers/admin/hr can see all"""
     if current_user["user_id"] != user_id and current_user["role"] not in [UserRole.ADMIN, UserRole.MANAGER, UserRole.HR]:
         raise HTTPException(status_code=403, detail="Non autorizzato")
     
@@ -498,13 +523,11 @@ async def get_user_balance(user_id: str, current_user: dict = Depends(get_curren
 
 @api_router.get("/balance/my", response_model=HoursBalance)
 async def get_my_balance(current_user: dict = Depends(get_current_user)):
-    """Get current user's hours balance"""
     balance = await calculate_user_hours_balance(current_user["user_id"])
     return HoursBalance(**balance)
 
 @api_router.get("/balance/all", response_model=List[HoursBalance])
 async def get_all_balances(current_user: dict = Depends(get_current_user)):
-    """Get all users' hours balance - for admin/manager/hr"""
     if current_user["role"] not in [UserRole.ADMIN, UserRole.MANAGER, UserRole.HR]:
         raise HTTPException(status_code=403, detail="Non autorizzato")
     
@@ -518,7 +541,6 @@ async def get_all_balances(current_user: dict = Depends(get_current_user)):
 
 @api_router.post("/users/{user_id}/add-hours")
 async def add_hours_to_user(user_id: str, request: AddHoursRequest, current_user: dict = Depends(require_hours_manager)):
-    """Add hours to a user's balance"""
     user = await db.users.find_one({"user_id": user_id}, {"_id": 0})
     if not user:
         raise HTTPException(status_code=404, detail="Utente non trovato")
@@ -532,7 +554,6 @@ async def add_hours_to_user(user_id: str, request: AddHoursRequest, current_user
     else:
         raise HTTPException(status_code=400, detail="Tipo ore non valido")
     
-    # Log the adjustment
     await db.hours_adjustments.insert_one({
         "adjustment_id": str(uuid.uuid4()),
         "user_id": user_id,
@@ -548,7 +569,6 @@ async def add_hours_to_user(user_id: str, request: AddHoursRequest, current_user
 
 @api_router.post("/hours/monthly-accrual")
 async def run_monthly_accrual(current_user: dict = Depends(require_hr_or_admin)):
-    """Run monthly accrual for all users - adds monthly hours to totals"""
     users = await db.users.find({}, {"_id": 0}).to_list(1000)
     updated_count = 0
     
@@ -567,7 +587,6 @@ async def run_monthly_accrual(current_user: dict = Depends(require_hr_or_admin))
                 await db.users.update_one({"user_id": user["user_id"]}, {"$set": update_data})
                 updated_count += 1
     
-    # Log the accrual
     await db.accrual_logs.insert_one({
         "log_id": str(uuid.uuid4()),
         "run_by": current_user["user_id"],
@@ -582,7 +601,6 @@ async def run_monthly_accrual(current_user: dict = Depends(require_hr_or_admin))
 
 @api_router.post("/absences", response_model=AbsenceResponse)
 async def create_absence(absence: AbsenceCreate, current_user: dict = Depends(get_current_user)):
-    # Validate hours for permessi
     if absence.absence_type == AbsenceType.PERMESSO and not absence.hours:
         raise HTTPException(status_code=400, detail="Le ore sono obbligatorie per i permessi")
     
@@ -605,7 +623,6 @@ async def create_absence(absence: AbsenceCreate, current_user: dict = Depends(ge
     }
     await db.absences.insert_one(absence_doc)
     
-    # Notify managers
     managers = await db.users.find(
         {"$or": [
             {"role": UserRole.ADMIN},
@@ -642,7 +659,6 @@ async def get_absences(
     user_id: Optional[str] = None,
     current_user: dict = Depends(get_current_user)
 ):
-    """Get all absences with optional filters"""
     query = {}
     if absence_type:
         query["absence_type"] = absence_type
@@ -661,13 +677,11 @@ async def get_my_absences(current_user: dict = Depends(get_current_user)):
 
 @api_router.get("/absences/pending", response_model=List[AbsenceResponse])
 async def get_pending_absences(current_user: dict = Depends(get_current_user)):
-    """Get pending absences for approval"""
     if current_user["role"] not in [UserRole.ADMIN, UserRole.MANAGER, UserRole.HR]:
         raise HTTPException(status_code=403, detail="Non autorizzato")
     
     query = {"status": AbsenceStatus.PENDING}
     
-    # Manager can only see their team's requests
     if current_user["role"] == UserRole.MANAGER:
         team_members = await db.users.find(
             {"manager_id": current_user["user_id"]}, 
@@ -692,14 +706,12 @@ async def handle_absence_action(
     if not absence:
         raise HTTPException(status_code=404, detail="Richiesta non trovata")
     
-    if absence["status"] != AbsenceStatus.PENDING:
-        raise HTTPException(status_code=400, detail="Questa richiesta è già stata gestita")
-    
-    # Check if manager can approve this request
     if current_user["role"] == UserRole.MANAGER:
         requester = await db.users.find_one({"user_id": absence["user_id"]}, {"_id": 0})
         if requester and requester.get("manager_id") != current_user["user_id"]:
             raise HTTPException(status_code=403, detail="Non puoi gestire richieste di altri team")
+    
+    absence_type_labels = {"ferie": "Ferie", "permesso": "Permesso", "malattia": "Malattia"}
     
     if action.action == "approve":
         new_status = AbsenceStatus.APPROVED
@@ -709,8 +721,12 @@ async def handle_absence_action(
         new_status = AbsenceStatus.REJECTED
         email_subject = "Richiesta rifiutata"
         email_message = f"La tua richiesta di assenza è stata <strong>RIFIUTATA</strong>.<br>Motivo: {action.reason or 'Non specificato'}"
+    elif action.action == "pending":
+        new_status = AbsenceStatus.PENDING
+        email_subject = "Richiesta rimessa in attesa"
+        email_message = "La tua richiesta di assenza è stata <strong>RIMESSA IN ATTESA</strong> di revisione."
     else:
-        raise HTTPException(status_code=400, detail="Azione non valida")
+        raise HTTPException(status_code=400, detail="Azione non valida. Usa: approve, reject, pending")
     
     update_data = {
         "status": new_status,
@@ -721,8 +737,6 @@ async def handle_absence_action(
     
     await db.absences.update_one({"absence_id": absence_id}, {"$set": update_data})
     
-    # Notify the requester
-    absence_type_labels = {"ferie": "Ferie", "permesso": "Permesso", "malattia": "Malattia"}
     await send_notification_email(
         absence["user_email"],
         f"{email_subject} - {absence_type_labels.get(absence['absence_type'], absence['absence_type'])}",
@@ -739,13 +753,63 @@ async def handle_absence_action(
     updated = await db.absences.find_one({"absence_id": absence_id}, {"_id": 0})
     return AbsenceResponse(**updated)
 
+@api_router.put("/absences/{absence_id}/status", response_model=AbsenceResponse)
+async def change_absence_status(
+    absence_id: str, 
+    status_change: AbsenceStatusChange, 
+    current_user: dict = Depends(get_current_user)
+):
+    """Change status of an already processed absence - for admin/manager/hr"""
+    if current_user["role"] not in [UserRole.ADMIN, UserRole.MANAGER, UserRole.HR]:
+        raise HTTPException(status_code=403, detail="Non autorizzato")
+    
+    absence = await db.absences.find_one({"absence_id": absence_id}, {"_id": 0})
+    if not absence:
+        raise HTTPException(status_code=404, detail="Richiesta non trovata")
+    
+    if status_change.new_status not in [AbsenceStatus.PENDING, AbsenceStatus.APPROVED, AbsenceStatus.REJECTED]:
+        raise HTTPException(status_code=400, detail="Stato non valido. Usa: pending, approved, rejected")
+    
+    if current_user["role"] == UserRole.MANAGER:
+        requester = await db.users.find_one({"user_id": absence["user_id"]}, {"_id": 0})
+        if requester and requester.get("manager_id") != current_user["user_id"]:
+            raise HTTPException(status_code=403, detail="Non puoi gestire richieste di altri team")
+    
+    update_data = {
+        "status": status_change.new_status,
+        "approved_by": f"{current_user['first_name']} {current_user['last_name']}",
+        "approved_at": datetime.now(timezone.utc).isoformat(),
+        "rejection_reason": status_change.reason if status_change.new_status == AbsenceStatus.REJECTED else None
+    }
+    
+    await db.absences.update_one({"absence_id": absence_id}, {"$set": update_data})
+    
+    status_labels = {"pending": "In attesa", "approved": "Approvata", "rejected": "Rifiutata"}
+    absence_type_labels = {"ferie": "Ferie", "permesso": "Permesso", "malattia": "Malattia"}
+    
+    await send_notification_email(
+        absence["user_email"],
+        f"Stato richiesta modificato - {absence_type_labels.get(absence['absence_type'], absence['absence_type'])}",
+        f"""
+        <h2>Stato richiesta modificato</h2>
+        <p>Lo stato della tua richiesta è stato cambiato in: <strong>{status_labels.get(status_change.new_status, status_change.new_status).upper()}</strong></p>
+        <p><strong>Tipo:</strong> {absence_type_labels.get(absence['absence_type'], absence['absence_type'])}</p>
+        <p><strong>Dal:</strong> {absence['start_date']}</p>
+        <p><strong>Al:</strong> {absence['end_date']}</p>
+        <p><strong>Modificato da:</strong> {current_user['first_name']} {current_user['last_name']}</p>
+        {f"<p><strong>Motivo:</strong> {status_change.reason}</p>" if status_change.reason else ""}
+        """
+    )
+    
+    updated = await db.absences.find_one({"absence_id": absence_id}, {"_id": 0})
+    return AbsenceResponse(**updated)
+
 @api_router.delete("/absences/{absence_id}")
 async def delete_absence(absence_id: str, current_user: dict = Depends(get_current_user)):
     absence = await db.absences.find_one({"absence_id": absence_id}, {"_id": 0})
     if not absence:
         raise HTTPException(status_code=404, detail="Richiesta non trovata")
     
-    # Only owner can delete pending requests, admin can delete any
     if current_user["role"] != UserRole.ADMIN:
         if absence["user_id"] != current_user["user_id"]:
             raise HTTPException(status_code=403, detail="Non puoi eliminare richieste di altri")
@@ -754,6 +818,205 @@ async def delete_absence(absence_id: str, current_user: dict = Depends(get_curre
     
     await db.absences.delete_one({"absence_id": absence_id})
     return {"message": "Richiesta eliminata"}
+
+# ==================== EXPORT ROUTES ====================
+
+@api_router.get("/export/absences")
+async def export_absences(
+    year: int = None,
+    month: int = None,
+    user_id: Optional[str] = None,
+    current_user: dict = Depends(get_current_user)
+):
+    """Export absences to Excel. Admin/Manager/HR can export all, employees only their own."""
+    can_export_all = current_user["role"] in [UserRole.ADMIN, UserRole.MANAGER, UserRole.HR]
+    
+    # If user_id specified, check permissions
+    if user_id and user_id != current_user["user_id"] and not can_export_all:
+        raise HTTPException(status_code=403, detail="Non puoi esportare dati di altri utenti")
+    
+    # Default to current year/month if not specified
+    now = datetime.now()
+    year = year or now.year
+    month = month or now.month
+    
+    # Build query
+    query = {"status": AbsenceStatus.APPROVED}
+    
+    if not can_export_all or (user_id and user_id == current_user["user_id"]):
+        query["user_id"] = current_user["user_id"]
+    elif user_id:
+        query["user_id"] = user_id
+    
+    # Get absences
+    absences = await db.absences.find(query, {"_id": 0}).to_list(1000)
+    
+    # Get users for the export
+    if can_export_all and not user_id:
+        users = await db.users.find({}, {"_id": 0, "user_id": 1, "first_name": 1, "last_name": 1}).to_list(1000)
+    else:
+        target_user_id = user_id or current_user["user_id"]
+        users = await db.users.find({"user_id": target_user_id}, {"_id": 0, "user_id": 1, "first_name": 1, "last_name": 1}).to_list(1)
+    
+    # Create workbook
+    wb = Workbook()
+    
+    # Create sheets for each month
+    days_in_month = calendar.monthrange(year, month)[1]
+    month_name = calendar.month_name[month]
+    
+    ws = wb.active
+    ws.title = f"{month_name} {year}"
+    
+    # Styles
+    header_fill = PatternFill(start_color="1F4E79", end_color="1F4E79", fill_type="solid")
+    header_font = Font(color="FFFFFF", bold=True, size=10)
+    ferie_fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
+    permesso_fill = PatternFill(start_color="BDD7EE", end_color="BDD7EE", fill_type="solid")
+    malattia_fill = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
+    thin_border = Border(
+        left=Side(style='thin'),
+        right=Side(style='thin'),
+        top=Side(style='thin'),
+        bottom=Side(style='thin')
+    )
+    
+    # Header row with day initials
+    day_initials = ["L", "M", "M", "G", "V", "S", "D"]  # Italian day initials
+    ws.cell(row=1, column=1, value="Dipendente").font = header_font
+    ws.cell(row=1, column=1).fill = header_fill
+    ws.cell(row=1, column=1).alignment = Alignment(horizontal="center", vertical="center")
+    ws.cell(row=1, column=1).border = thin_border
+    ws.column_dimensions['A'].width = 25
+    
+    for day in range(1, days_in_month + 1):
+        col = day + 1
+        day_date = date(year, month, day)
+        day_initial = day_initials[day_date.weekday()]
+        
+        # Header with day initial
+        cell = ws.cell(row=1, column=col, value=day_initial)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+        cell.border = thin_border
+        
+        # Second row with day number
+        cell2 = ws.cell(row=2, column=col, value=day)
+        cell2.font = Font(bold=True, size=9)
+        cell2.alignment = Alignment(horizontal="center", vertical="center")
+        cell2.border = thin_border
+        
+        ws.column_dimensions[get_column_letter(col)].width = 4
+    
+    # Employee name header spans row 1-2
+    ws.merge_cells('A1:A2')
+    
+    # Add legend columns
+    legend_col = days_in_month + 3
+    ws.cell(row=1, column=legend_col, value="Legenda:").font = Font(bold=True)
+    ws.cell(row=2, column=legend_col, value="F = Ferie").fill = ferie_fill
+    ws.cell(row=3, column=legend_col, value="P = Permesso").fill = permesso_fill
+    ws.cell(row=4, column=legend_col, value="M = Malattia").fill = malattia_fill
+    
+    # Data rows
+    row_num = 3
+    for user in users:
+        user_name = f"{user['first_name']} {user['last_name']}"
+        ws.cell(row=row_num, column=1, value=user_name).border = thin_border
+        ws.cell(row=row_num, column=1).alignment = Alignment(vertical="center")
+        
+        # Get user's absences for this month
+        user_absences = [a for a in absences if a["user_id"] == user["user_id"]]
+        
+        for day in range(1, days_in_month + 1):
+            col = day + 1
+            cell = ws.cell(row=row_num, column=col)
+            cell.border = thin_border
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+            
+            current_date = date(year, month, day)
+            
+            # Check if this day has any absence
+            for absence in user_absences:
+                start = datetime.strptime(absence["start_date"], "%Y-%m-%d").date()
+                end = datetime.strptime(absence["end_date"], "%Y-%m-%d").date()
+                
+                if start <= current_date <= end:
+                    if absence["absence_type"] == "ferie":
+                        cell.value = "F"
+                        cell.fill = ferie_fill
+                    elif absence["absence_type"] == "permesso":
+                        cell.value = "P"
+                        cell.fill = permesso_fill
+                    elif absence["absence_type"] == "malattia":
+                        cell.value = "M"
+                        cell.fill = malattia_fill
+                    break
+        
+        row_num += 1
+    
+    # Summary sheet
+    ws_summary = wb.create_sheet(title="Riepilogo")
+    ws_summary.cell(row=1, column=1, value="Dipendente").font = header_font
+    ws_summary.cell(row=1, column=1).fill = header_fill
+    ws_summary.cell(row=1, column=2, value="Giorni Ferie").font = header_font
+    ws_summary.cell(row=1, column=2).fill = header_fill
+    ws_summary.cell(row=1, column=3, value="Ore Permessi").font = header_font
+    ws_summary.cell(row=1, column=3).fill = header_fill
+    ws_summary.cell(row=1, column=4, value="Giorni Malattia").font = header_font
+    ws_summary.cell(row=1, column=4).fill = header_fill
+    
+    ws_summary.column_dimensions['A'].width = 25
+    ws_summary.column_dimensions['B'].width = 15
+    ws_summary.column_dimensions['C'].width = 15
+    ws_summary.column_dimensions['D'].width = 15
+    
+    row_num = 2
+    for user in users:
+        user_name = f"{user['first_name']} {user['last_name']}"
+        user_absences = [a for a in absences if a["user_id"] == user["user_id"]]
+        
+        ferie_days = 0
+        permesso_hours = 0
+        malattia_days = 0
+        
+        for absence in user_absences:
+            start = datetime.strptime(absence["start_date"], "%Y-%m-%d").date()
+            end = datetime.strptime(absence["end_date"], "%Y-%m-%d").date()
+            
+            # Count only days in the selected month
+            current = start
+            while current <= end:
+                if current.year == year and current.month == month:
+                    if current.weekday() < 5:  # Working days only
+                        if absence["absence_type"] == "ferie":
+                            ferie_days += 1
+                        elif absence["absence_type"] == "malattia":
+                            malattia_days += 1
+                current += timedelta(days=1)
+            
+            if absence["absence_type"] == "permesso":
+                permesso_hours += absence.get("hours", 0)
+        
+        ws_summary.cell(row=row_num, column=1, value=user_name).border = thin_border
+        ws_summary.cell(row=row_num, column=2, value=ferie_days).border = thin_border
+        ws_summary.cell(row=row_num, column=3, value=permesso_hours).border = thin_border
+        ws_summary.cell(row=row_num, column=4, value=malattia_days).border = thin_border
+        row_num += 1
+    
+    # Save to buffer
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+    
+    filename = f"assenze_{month_name}_{year}.xlsx"
+    
+    return StreamingResponse(
+        buffer,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
 
 # ==================== SETTINGS ROUTES ====================
 
@@ -801,6 +1064,17 @@ async def upload_logo(file: UploadFile = File(...), current_user: dict = Depends
     
     return {"logo_base64": data_uri}
 
+# ==================== SCHEDULER SETTINGS ====================
+
+@api_router.get("/scheduler/status")
+async def get_scheduler_status(current_user: dict = Depends(require_hr_or_admin)):
+    """Get scheduler status"""
+    jobs = scheduler.get_jobs()
+    return {
+        "running": scheduler.running,
+        "jobs": [{"id": job.id, "next_run": str(job.next_run_time)} for job in jobs]
+    }
+
 # ==================== STATS ROUTES ====================
 
 @api_router.get("/stats")
@@ -840,6 +1114,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.on_event("startup")
+async def startup_event():
+    # Schedule monthly accrual job - runs on the 1st of each month at 00:01
+    scheduler.add_job(
+        monthly_accrual_job,
+        CronTrigger(day=1, hour=0, minute=1),
+        id="monthly_accrual",
+        replace_existing=True
+    )
+    scheduler.start()
+    logger.info("Scheduler started - Monthly accrual scheduled for 1st of each month at 00:01")
+
 @app.on_event("shutdown")
-async def shutdown_db_client():
+async def shutdown_event():
+    scheduler.shutdown()
     client.close()
