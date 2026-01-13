@@ -179,6 +179,9 @@ const Approvals = () => {
                         <TableCell className="text-slate-600">
                           {format(parseISO(absence.start_date), "d MMM", { locale: it })} -{" "}
                           {format(parseISO(absence.end_date), "d MMM yyyy", { locale: it })}
+                          {absence.hours && (
+                            <span className="ml-2 text-sky-600 font-medium">({absence.hours}h)</span>
+                          )}
                         </TableCell>
                         <TableCell className="text-slate-600 max-w-xs truncate">
                           {absence.notes || "-"}
