@@ -50,8 +50,8 @@ const Layout = () => {
   const navItems = [
     { to: "/", icon: Calendar, label: "Calendario", show: true },
     { to: "/my-requests", icon: ClipboardList, label: "Le mie richieste", show: true },
-    { to: "/approvals", icon: CheckSquare, label: "Approvazioni", show: isManagerOrAdmin() },
-    { to: "/users", icon: Users, label: "Utenti", show: isAdmin() },
+    { to: "/approvals", icon: CheckSquare, label: "Approvazioni", show: canApprove() },
+    { to: "/users", icon: Users, label: "Utenti", show: canManageUsers() },
     { to: "/settings", icon: Settings, label: "Impostazioni", show: isAdmin() },
   ];
 
